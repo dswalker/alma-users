@@ -1,0 +1,10 @@
+{
+	"require": {
+        "dswalker/alma-api": "dev-master"
+    },
+    "autoload": {
+        "psr-4": {
+            "Users\\": "src/"
+        }
+    }
+}
