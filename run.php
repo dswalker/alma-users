@@ -47,7 +47,7 @@ foreach ($campuses as $campus) {
     try {
     
         // get any csv files
-        $files = glob("campuses/$campus/incoming/*.*"); 
+        $files = glob($config->get('data_dir', true) . "/*.*"); 
         
         foreach ($files as $file) {
             
@@ -60,49 +60,66 @@ foreach ($campuses as $campus) {
                     
                     $user_id = preg_replace('/\D/', '', $data[0]);
                     $barcode = preg_replace('/\D/', '', $data[1]);
+                    $found = false;
+                    
+                    $log = "\n$date\t$user_id\t$barcode";
                     
                     // get user
-                    $user = $users->getUser($user_id);
-                    
-                    // see if user has a barcode
-                    
-                    $barcode_in_record = "";
-                    $ids = $user->getUserIdentifiers();
-                    
-                    foreach ($ids as $id) {
-                        if ($id->getIdType()->value == $id_type) {
-                            $barcode_in_record = $id->getValue();
+                    try {
+                        $user = $users->getUser($user_id);
+                        $found = true;
+                    } catch (\Alma\Exception\AlmaException $e) {
+                        if ($e->getCode() == '401861') {
+                            $log .= "\tnot_found";
+                        } else {
+                            throw $e;
                         }
                     }
                     
-                    $log = "\n$date\t$user_id\t$barcode\t$barcode_in_record";
+                    if ($found == true) {
                     
-                    // user has no barcode
-                    if ($barcode_in_record == "") {
+                        // see if user has a barcode
                         
-                        // keep original json
-                        $json = (string) $user->json();
+                        $barcode_in_record = "";
+                        $ids = $user->getUserIdentifiers();
                         
-                        // add barcode from file
+                        foreach ($ids as $id) {
+                            if ($id->getIdType()->value == $id_type) {
+                                $barcode_in_record = $id->getValue();
+                            }
+                        }
                         
-                        $user_identifier = new UserIdentifier();
-                        $user_identifier->setIdType($id_type);
-                        $user_identifier->setValue($barcode);
-                        $user_identifier->setNote("Added by CO $date");
-                        
-                        // add to current identifiers
-                        
-                        $ids[] = $user_identifier;
-                        $user->setUserIdentifiers($ids);
-                        
-                        // update data in Alma
-                        $user->save();
-                        
-                        // write out original json
-                        file_put_contents("campuses/$campus/changed/$user_id-$date.json", $json);
-                        $log .= "ADDED";
+                        // user has no barcode
+                        if ($barcode_in_record == "") {
+                            
+                            // keep original json
+                            $json = (string) $user->json();
+                            
+                            // add barcode from file
+                            
+                            $user_identifier = new UserIdentifier();
+                            $user_identifier->setIdType($id_type);
+                            $user_identifier->setValue($barcode);
+                            $user_identifier->setNote("Added by CO $date");
+                            
+                            // add to current identifiers
+                            
+                            $ids[] = $user_identifier;
+                            $user->setUserIdentifiers($ids);
+                            
+                            // update data in Alma
+                            $user->save();
+                            
+                            // write out original json
+                            file_put_contents("campuses/$campus/changed/$user_id-$date.json", $json);
+                            $log .= "\tADDED";
+                        } else {
+                            $log .= "\tbarcode_in_record";
+                        }
                     }
+                    
                     // write to log
+                    echo $log;
                     file_put_contents("logs/$campus/" . date('Y-m', time()) . ".log", $log, FILE_APPEND);
                 }
                 
@@ -120,35 +137,8 @@ foreach ($campuses as $campus) {
             }
         }
     } catch (Exception $e) {
-        $error = "\n[$date]\n$campus\n" . $e->getTraceAsString() . "\n\n";
+        throw $e;
+        $error = "\n[" . date('Y-m-d') . "]\n$campus\n" . $e->getTraceAsString() . "\n\n";
         file_put_contents("logs/error-" . date('Y-m', time()) . ".log", $error, FILE_APPEND);
     }
 }
-
-
-
-
-
-
-/*
-$start = 0;
-$chunk = 100;
-
-do {
-    $list = $users->getUsers("", $chunk, $start);
-    $start += 100;
-    
-    foreach ($list->getResults() as $user) {
-        $user->getFullRecord();
-        
-        echo $user->getLastName() . ", " . $user->getFirstName() . "\n";
-        
-        foreach ($user->getUserIdentifiers() as $id) {
-            if ($id->getIdType()->value == 'BARCODE') {
-                echo "\t" . $id->getValue() . "\n";
-            }
-        }
-    }
-    exit;
-} while ($list->end < $list->total);
-*/
